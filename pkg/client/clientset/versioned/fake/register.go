@@ -26,6 +26,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	cdiv1alpha1 "kubevirt.io/containerized-data-importer/pkg/apis/core/v1alpha1"
 	uploadv1alpha1 "kubevirt.io/containerized-data-importer/pkg/apis/upload/v1alpha1"
+	volumesnapshotv1alpha1 "kubevirt.io/containerized-data-importer/pkg/apis/volumesnapshot/v1alpha1"
 )
 
 var scheme = runtime.NewScheme()
@@ -34,6 +35,7 @@ var parameterCodec = runtime.NewParameterCodec(scheme)
 var localSchemeBuilder = runtime.SchemeBuilder{
 	cdiv1alpha1.AddToScheme,
 	uploadv1alpha1.AddToScheme,
+	volumesnapshotv1alpha1.AddToScheme,
 }
 
 // AddToScheme adds all types of this clientset into the given scheme. This allows composition

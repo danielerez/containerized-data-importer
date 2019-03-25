@@ -31,6 +31,7 @@ import (
 	core "kubevirt.io/containerized-data-importer/pkg/client/informers/externalversions/core"
 	internalinterfaces "kubevirt.io/containerized-data-importer/pkg/client/informers/externalversions/internalinterfaces"
 	upload "kubevirt.io/containerized-data-importer/pkg/client/informers/externalversions/upload"
+	volumesnapshot "kubevirt.io/containerized-data-importer/pkg/client/informers/externalversions/volumesnapshot"
 )
 
 // SharedInformerOption defines the functional option type for SharedInformerFactory.
@@ -175,6 +176,7 @@ type SharedInformerFactory interface {
 
 	Cdi() core.Interface
 	Upload() upload.Interface
+	Volumesnapshot() volumesnapshot.Interface
 }
 
 func (f *sharedInformerFactory) Cdi() core.Interface {
@@ -183,4 +185,8 @@ func (f *sharedInformerFactory) Cdi() core.Interface {
 
 func (f *sharedInformerFactory) Upload() upload.Interface {
 	return upload.New(f, f.namespace, f.tweakListOptions)
+}
+
+func (f *sharedInformerFactory) Volumesnapshot() volumesnapshot.Interface {
+	return volumesnapshot.New(f, f.namespace, f.tweakListOptions)
 }
