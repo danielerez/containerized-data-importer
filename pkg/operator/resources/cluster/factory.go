@@ -39,6 +39,9 @@ func createCRDResources(args *FactoryArgs) []runtime.Object {
 	return []runtime.Object{
 		createDataVolumeCRD(),
 		createCDIConfigCRD(),
+		createVolumeSnapshotClassCRD(),
+		createVolumeSnapshotContentCRD(),
+		createVolumeSnapshotCRD(),
 	}
 }
 

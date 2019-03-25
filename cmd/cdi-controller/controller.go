@@ -17,7 +17,9 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
 	clientset "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned"
+	csiclientset "kubevirt.io/containerized-data-importer/pkg/snapshot-client/clientset/versioned"
 	informers "kubevirt.io/containerized-data-importer/pkg/client/informers/externalversions"
+	csiinformers "kubevirt.io/containerized-data-importer/pkg/snapshot-client/informers/externalversions"
 	"kubevirt.io/containerized-data-importer/pkg/common"
 	"kubevirt.io/containerized-data-importer/pkg/controller"
 )
@@ -113,7 +115,14 @@ func start(cfg *rest.Config, stopCh <-chan struct{}) {
 		klog.Fatalf("Error building example clientset: %s", err.Error())
 	}
 
+	csiClient, err := csiclientset.NewForConfig(cfg)
+
+	if err != nil {
+		klog.Fatalf("Error building csi clientset: %s", err.Error())
+	}
+
 	cdiInformerFactory := informers.NewSharedInformerFactory(cdiClient, common.DefaultResyncPeriod)
+	csiInformerFactory := csiinformers.NewSharedInformerFactory(csiClient, common.DefaultResyncPeriod)
 	pvcInformerFactory := k8sinformers.NewSharedInformerFactory(client, common.DefaultResyncPeriod)
 	podInformerFactory := k8sinformers.NewFilteredSharedInformerFactory(client, common.DefaultResyncPeriod, "", func(options *v1.ListOptions) {
 		options.LabelSelector = common.CDILabelSelector
@@ -133,12 +142,16 @@ func start(cfg *rest.Config, stopCh <-chan struct{}) {
 	routeInformer := routeInformerFactory.Route().V1().Routes()
 	dataVolumeInformer := cdiInformerFactory.Cdi().V1alpha1().DataVolumes()
 	configInformer := cdiInformerFactory.Cdi().V1alpha1().CDIConfigs()
+	snapshotInformer := csiInformerFactory.Snapshot().V1alpha1().VolumeSnapshots()
+	snapshotClassInformer := csiInformerFactory.Snapshot().V1alpha1().VolumeSnapshotClasses()
 
 	dataVolumeController := controller.NewDataVolumeController(
 		client,
 		cdiClient,
+		csiClient,
 		pvcInformer,
-		dataVolumeInformer)
+		dataVolumeInformer,
+		snapshotClassInformer)
 
 	importController := controller.NewImportController(
 		client,
@@ -152,6 +165,17 @@ func start(cfg *rest.Config, stopCh <-chan struct{}) {
 	cloneController := controller.NewCloneController(client,
 		pvcInformer,
 		podInformer,
+		clonerImage,
+		pullPolicy,
+		verbose)
+
+	smartCloneController := controller.NewSmartCloneController(client,
+		cdiClient,
+		csiClient,
+		pvcInformer,
+		podInformer,
+		snapshotInformer,
+		dataVolumeInformer,
 		clonerImage,
 		pullPolicy,
 		verbose)
@@ -190,6 +214,7 @@ func start(cfg *rest.Config, stopCh <-chan struct{}) {
 	}
 
 	go cdiInformerFactory.Start(stopCh)
+	go csiInformerFactory.Start(stopCh)
 	go pvcInformerFactory.Start(stopCh)
 	go podInformerFactory.Start(stopCh)
 	go serviceInformerFactory.Start(stopCh)
@@ -218,6 +243,13 @@ func start(cfg *rest.Config, stopCh <-chan struct{}) {
 		err = cloneController.Run(1, stopCh)
 		if err != nil {
 			klog.Fatalf("Error running clone controller: %+v", err)
+		}
+	}()
+
+	go func() {
+		err = smartCloneController.Run(1, stopCh)
+		if err != nil {
+			klog.Fatalf("Error running smart clone controller: %+v", err)
 		}
 	}()
 
