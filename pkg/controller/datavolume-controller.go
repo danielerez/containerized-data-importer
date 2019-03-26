@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -38,10 +39,13 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog"
 	cdiv1 "kubevirt.io/containerized-data-importer/pkg/apis/core/v1alpha1"
+	cdisnapshotsv1 "kubevirt.io/containerized-data-importer/pkg/apis/volumesnapshot/v1alpha1"
 	clientset "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned"
 	cdischeme "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned/scheme"
 	informers "kubevirt.io/containerized-data-importer/pkg/client/informers/externalversions/core/v1alpha1"
+	snapshotsinformers "kubevirt.io/containerized-data-importer/pkg/client/informers/externalversions/volumesnapshot/v1alpha1"
 	listers "kubevirt.io/containerized-data-importer/pkg/client/listers/core/v1alpha1"
+	snapshotslisters "kubevirt.io/containerized-data-importer/pkg/client/listers/volumesnapshot/v1alpha1"
 	expectations "kubevirt.io/containerized-data-importer/pkg/expectations"
 )
 
@@ -129,6 +133,8 @@ type DataVolumeController struct {
 	dataVolumesLister listers.DataVolumeLister
 	dataVolumesSynced cache.InformerSynced
 
+	snapshotClassLister snapshotslisters.VolumeSnapshotClassLister
+
 	workqueue workqueue.RateLimitingInterface
 	recorder  record.EventRecorder
 
@@ -148,7 +154,8 @@ func NewDataVolumeController(
 	kubeclientset kubernetes.Interface,
 	cdiClientSet clientset.Interface,
 	pvcInformer coreinformers.PersistentVolumeClaimInformer,
-	dataVolumeInformer informers.DataVolumeInformer) *DataVolumeController {
+	dataVolumeInformer informers.DataVolumeInformer,
+	snapshotClassInformer snapshotsinformers.VolumeSnapshotClassInformer) *DataVolumeController {
 
 	// Create event broadcaster
 	// Add datavolume-controller types to the default Kubernetes Scheme so Events can be
@@ -161,15 +168,16 @@ func NewDataVolumeController(
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &DataVolumeController{
-		kubeclientset:     kubeclientset,
-		cdiClientSet:      cdiClientSet,
-		pvcLister:         pvcInformer.Lister(),
-		pvcsSynced:        pvcInformer.Informer().HasSynced,
-		dataVolumesLister: dataVolumeInformer.Lister(),
-		dataVolumesSynced: dataVolumeInformer.Informer().HasSynced,
-		workqueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "DataVolumes"),
-		recorder:          recorder,
-		pvcExpectations:   expectations.NewUIDTrackingControllerExpectations(expectations.NewControllerExpectations()),
+		kubeclientset:       kubeclientset,
+		cdiClientSet:        cdiClientSet,
+		pvcLister:           pvcInformer.Lister(),
+		pvcsSynced:          pvcInformer.Informer().HasSynced,
+		dataVolumesLister:   dataVolumeInformer.Lister(),
+		dataVolumesSynced:   dataVolumeInformer.Informer().HasSynced,
+		snapshotClassLister: snapshotClassInformer.Lister(),
+		workqueue:           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "DataVolumes"),
+		recorder:            recorder,
+		pvcExpectations:     expectations.NewUIDTrackingControllerExpectations(expectations.NewControllerExpectations()),
 	}
 
 	klog.V(2).Info("Setting up event handlers")
@@ -297,7 +305,7 @@ func (c *DataVolumeController) processNextWorkItem() bool {
 // converge the two. It then updates the Status block of the DataVolume resource
 // with the current status of the resource.
 func (c *DataVolumeController) syncHandler(key string) error {
-
+	klog.V(3).Infof("!!! DataVolumeController syncHandler key: %s", key)
 	exists := true
 
 	// Convert the namespace/name string into a distinct namespace and name
@@ -342,17 +350,34 @@ func (c *DataVolumeController) syncHandler(key string) error {
 		return errors.Errorf(msg)
 	}
 
+	// expectations prevent us from creating multiple pods. An expectation forces
+	// us to observe a pod's creation in the cache.
 	needsSync := c.pvcExpectations.SatisfiedExpectations(key)
+	klog.V(3).Infof("!!! DataVolumeController needsSync: %t", needsSync)
+	klog.V(3).Infof("!!! DataVolumeController exists: %t", exists)
+
 	if !exists && needsSync {
-		newPvc, err := newPersistentVolumeClaim(dataVolume)
-		if err != nil {
-			return err
-		}
-		c.pvcExpectations.ExpectCreations(key, 1)
-		pvc, err = c.kubeclientset.CoreV1().PersistentVolumeClaims(dataVolume.Namespace).Create(newPvc)
-		if err != nil {
-			c.pvcExpectations.CreationObserved(key)
-			return err
+		smartCloneApplicable, snapshotClassName := c.isSmartCloneApplicable(dataVolume)
+		if smartCloneApplicable {
+			klog.V(3).Infof("!!! smartCloneApplicable: %t", smartCloneApplicable)
+			newSnapshot := newSnapshot(dataVolume, *snapshotClassName)
+			c.pvcExpectations.ExpectCreations(key, 1)
+			_, err := c.cdiClientSet.VolumesnapshotV1alpha1().VolumeSnapshots(newSnapshot.Namespace).Create(newSnapshot)
+			if err != nil {
+				c.pvcExpectations.CreationObserved(key)
+				return err
+			}
+		} else {
+			newPvc, err := newPersistentVolumeClaim(dataVolume)
+			if err != nil {
+				return err
+			}
+			c.pvcExpectations.ExpectCreations(key, 1)
+			pvc, err = c.kubeclientset.CoreV1().PersistentVolumeClaims(dataVolume.Namespace).Create(newPvc)
+			if err != nil {
+				c.pvcExpectations.CreationObserved(key)
+				return err
+			}
 		}
 	}
 
@@ -365,6 +390,115 @@ func (c *DataVolumeController) syncHandler(key string) error {
 
 	c.recorder.Event(dataVolume, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
 	return nil
+}
+
+func (c *DataVolumeController) isSmartCloneApplicable(dataVolume *cdiv1.DataVolume) (bool, *string) {
+	//klog.V(3).Infof("!!! dataVolume.Spec.Source.PVC.Namespace %s", dataVolume.Spec.Source.PVC.Namespace)
+	//klog.V(3).Infof("!!! dataVolume.Namespace %s", dataVolume.Namespace)
+	// Check if clone is requested
+	if dataVolume.Spec.Source.PVC == nil {
+		return false, nil
+	}
+
+	// Find source PVC
+	pvc, err := c.pvcLister.PersistentVolumeClaims(dataVolume.Spec.Source.PVC.Namespace).Get(dataVolume.Spec.Source.PVC.Name)
+	if err != nil {
+		runtime.HandleError(err)
+		return false, nil
+	}
+	if pvc == nil {
+		klog.V(3).Infof("Source PVC is missing: %s/%s", dataVolume.Spec.Source.PVC.Namespace, dataVolume.Spec.Source.PVC.Name)
+		return false, nil
+	}
+	klog.V(3).Infof("!!! pvc.Namespace %s", pvc.Namespace)
+
+	targetPvcStorageClassName := dataVolume.Spec.PVC.StorageClassName
+
+	// Handle unspecified storage class name, fallback to default storage class
+	if targetPvcStorageClassName == nil {
+		storageclasses, err := c.kubeclientset.StorageV1().StorageClasses().List(metav1.ListOptions{})
+		if err != nil {
+			runtime.HandleError(err)
+			return false, nil
+		}
+		for _, storageClass := range storageclasses.Items {
+			if storageClass.Annotations["storageclass.kubernetes.io/is-default-class"] == "true" {
+				targetPvcStorageClassName = &storageClass.Name
+				break
+			}
+		}
+	}
+	klog.V(3).Infof("!!! (source) pvc.Spec.StorageClassName %s", *pvc.Spec.StorageClassName)
+
+	sourcePvcStorageClassName := pvc.Spec.StorageClassName
+
+	// Compare soruce and target storage classess
+	if *sourcePvcStorageClassName != *targetPvcStorageClassName {
+		klog.V(3).Infof("Source PVC and target PVC belong to different storage classes: %s - %s",
+			*sourcePvcStorageClassName, *targetPvcStorageClassName)
+		return false, nil
+	}
+
+	// Compare source and target namespaces
+	if pvc.Namespace != dataVolume.Namespace {
+		klog.V(3).Infof("Source PVC and target PVC belong to different namespaces: %s - %s",
+			pvc.Namespace, dataVolume.Namespace)
+		return false, nil
+	}
+
+	// Fetch the source storage class
+	storageclass, err := c.kubeclientset.StorageV1().StorageClasses().Get(*sourcePvcStorageClassName, metav1.GetOptions{})
+	if err != nil {
+		runtime.HandleError(err)
+		return false, nil
+	}
+
+	// List the snapshot classes
+	scs, err := c.snapshotClassLister.List(labels.NewSelector())
+	if err != nil {
+		klog.V(3).Infof("Cannot list snapshot classes")
+		return false, nil
+	}
+	for _, snapshotClass := range scs {
+		// Validate association between snapshot class and storage class
+		if snapshotClass.Snapshotter == storageclass.Provisioner {
+			klog.V(3).Infof("smart-clone is applicable for datavolume '%s' with snapshot class '%s'",
+				dataVolume.Name, snapshotClass.Name)
+			return true, &snapshotClass.Name
+		}
+	}
+
+	return false, nil
+}
+
+func newSnapshot(dataVolume *cdiv1.DataVolume, snapshotClassName string) *cdisnapshotsv1.VolumeSnapshot {
+	className := snapshotClassName
+	snapshot := &cdisnapshotsv1.VolumeSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      dataVolume.Name,
+			Namespace: dataVolume.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(dataVolume, schema.GroupVersionKind{
+					Group:   cdiv1.SchemeGroupVersion.Group,
+					Version: cdiv1.SchemeGroupVersion.Version,
+					Kind:    "DataVolume",
+				}),
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: cdisnapshotsv1.SchemeGroupVersion.String(),
+			Kind:       "VolumeSnapshot",
+		},
+		Status: cdisnapshotsv1.VolumeSnapshotStatus{},
+		Spec: cdisnapshotsv1.VolumeSnapshotSpec{
+			Source: &corev1.TypedLocalObjectReference{
+				Name: dataVolume.Spec.Source.PVC.Name,
+				Kind: "PersistentVolumeClaim",
+			},
+			VolumeSnapshotClassName: &className,
+		},
+	}
+	return snapshot
 }
 
 func (c *DataVolumeController) updateImportStatusPhase(pvc *corev1.PersistentVolumeClaim, dataVolumeCopy *cdiv1.DataVolume, event *DataVolumeEvent) {
@@ -460,11 +594,13 @@ func (c *DataVolumeController) updateUploadStatusPhase(pvc *corev1.PersistentVol
 }
 
 func (c *DataVolumeController) updateDataVolumeStatus(dataVolume *cdiv1.DataVolume, pvc *corev1.PersistentVolumeClaim) error {
+	klog.V(3).Infof("!!! DataVolumeController updateDataVolumeStatus dataVolume name: %s", dataVolume.Name)
 	dataVolumeCopy := dataVolume.DeepCopy()
 	var err error
 	var event DataVolumeEvent
 
 	curPhase := dataVolumeCopy.Status.Phase
+
 	if pvc == nil {
 		if curPhase != cdiv1.PhaseUnset && curPhase != cdiv1.Pending {
 
@@ -478,6 +614,11 @@ func (c *DataVolumeController) updateDataVolumeStatus(dataVolume *cdiv1.DataVolu
 		}
 
 	} else {
+
+		klog.V(3).Infof("!!! DataVolumeController updateDataVolumeStatus pvc pvc.Status.Phase: %s", pvc.Status.Phase)
+		klog.V(3).Infof("!!! DataVolumeController updateDataVolumeStatus pvc name: %s", pvc.Name)
+		klog.V(3).Infof("!!! DataVolumeController updateDataVolumeStatus curPhase: %s", curPhase)
+
 		switch pvc.Status.Phase {
 		case corev1.ClaimPending:
 			dataVolumeCopy.Status.Phase = cdiv1.Pending
@@ -497,6 +638,10 @@ func (c *DataVolumeController) updateDataVolumeStatus(dataVolume *cdiv1.DataVolu
 			_, ok = pvc.Annotations[AnnCloneRequest]
 			if ok {
 				dataVolumeCopy.Status.Phase = cdiv1.CloneScheduled
+				c.updateCloneStatusPhase(pvc, dataVolumeCopy, &event)
+			}
+			_, ok = pvc.Annotations[AnnSmartCloneRequest]
+			if ok {
 				c.updateCloneStatusPhase(pvc, dataVolumeCopy, &event)
 			}
 			_, ok = pvc.Annotations[AnnUploadRequest]

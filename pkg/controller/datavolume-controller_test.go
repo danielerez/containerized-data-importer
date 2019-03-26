@@ -156,7 +156,8 @@ func (f *fixture) newController() (*DataVolumeController, informers.SharedInform
 	c := NewDataVolumeController(f.kubeclient,
 		f.client,
 		k8sI.Core().V1().PersistentVolumeClaims(),
-		i.Cdi().V1alpha1().DataVolumes())
+		i.Cdi().V1alpha1().DataVolumes(),
+		i.Volumesnapshot().V1alpha1().VolumeSnapshotClasses())
 
 	c.dataVolumesSynced = alwaysReady
 	c.pvcsSynced = alwaysReady
