@@ -133,12 +133,15 @@ func start(cfg *rest.Config, stopCh <-chan struct{}) {
 	routeInformer := routeInformerFactory.Route().V1().Routes()
 	dataVolumeInformer := cdiInformerFactory.Cdi().V1alpha1().DataVolumes()
 	configInformer := cdiInformerFactory.Cdi().V1alpha1().CDIConfigs()
+	snapshotInformer := cdiInformerFactory.Volumesnapshot().V1alpha1().VolumeSnapshots()
+	snapshotClassInformer := cdiInformerFactory.Volumesnapshot().V1alpha1().VolumeSnapshotClasses()
 
 	dataVolumeController := controller.NewDataVolumeController(
 		client,
 		cdiClient,
 		pvcInformer,
-		dataVolumeInformer)
+		dataVolumeInformer,
+		snapshotClassInformer)
 
 	importController := controller.NewImportController(
 		client,
@@ -152,6 +155,15 @@ func start(cfg *rest.Config, stopCh <-chan struct{}) {
 	cloneController := controller.NewCloneController(client,
 		pvcInformer,
 		podInformer,
+		clonerImage,
+		pullPolicy,
+		verbose)
+
+	smartCloneController := controller.NewSmartCloneController(client,
+		cdiClient,
+		pvcInformer,
+		podInformer,
+		snapshotInformer,
 		clonerImage,
 		pullPolicy,
 		verbose)
@@ -218,6 +230,13 @@ func start(cfg *rest.Config, stopCh <-chan struct{}) {
 		err = cloneController.Run(1, stopCh)
 		if err != nil {
 			klog.Fatalf("Error running clone controller: %+v", err)
+		}
+	}()
+
+	go func() {
+		err = smartCloneController.Run(1, stopCh)
+		if err != nil {
+			klog.Fatalf("Error running smart clone controller: %+v", err)
 		}
 	}()
 

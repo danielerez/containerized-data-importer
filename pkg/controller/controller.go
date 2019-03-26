@@ -31,6 +31,7 @@ type Controller struct {
 	clientset                kubernetes.Interface
 	queue                    workqueue.RateLimitingInterface
 	pvcInformer, podInformer cache.SharedIndexInformer
+	snapshotInformer         cache.SharedIndexInformer
 	pvcLister                corelisters.PersistentVolumeClaimLister
 	podLister                corelisters.PodLister
 	pvcsSynced               cache.InformerSynced
@@ -185,6 +186,9 @@ func (c *Controller) run(threadiness int, stopCh <-chan struct{}, controller int
 	if !cache.WaitForCacheSync(stopCh, c.podInformer.HasSynced) {
 		return errors.New("Timeout waiting for pod cache sync")
 	}
+	if c.snapshotInformer != nil && !cache.WaitForCacheSync(stopCh, c.snapshotInformer.HasSynced) {
+		return errors.New("Timeout waiting for snapshot cache sync")
+	}
 	klog.V(3).Infoln("Controller cache has synced")
 	for i := 0; i < threadiness; i++ {
 		//Go is not pure object oriented language. The command repetition below is a result of that.
@@ -193,6 +197,8 @@ func (c *Controller) run(threadiness int, stopCh <-chan struct{}, controller int
 			go wait.Until(t.runPVCWorkers, time.Second, stopCh)
 		case *CloneController:
 			go wait.Until(t.runPVCWorkers, time.Second, stopCh)
+		case *SmartCloneController:
+			go wait.Until(t.runSnapshotWorkers, time.Second, stopCh)
 		}
 	}
 	<-stopCh

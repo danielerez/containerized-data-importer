@@ -59,6 +59,7 @@ func createControllerClusterRole() *rbacv1.ClusterRole {
 			},
 			Resources: []string{
 				"persistentvolumeclaims",
+				"volumesnapshots",
 			},
 			Verbs: []string{
 				"get",
@@ -77,6 +78,7 @@ func createControllerClusterRole() *rbacv1.ClusterRole {
 			Resources: []string{
 				"persistentvolumeclaims/finalizers",
 				"pods/finalizers",
+				"volumesnapshots/finalizers",
 			},
 			Verbs: []string{
 				"update",
@@ -180,6 +182,17 @@ func createControllerClusterRole() *rbacv1.ClusterRole {
 		{
 			APIGroups: []string{
 				"cdi.kubevirt.io",
+			},
+			Resources: []string{
+				"*",
+			},
+			Verbs: []string{
+				"*",
+			},
+		},
+		{
+			APIGroups: []string{
+				"snapshot.storage.k8s.io",
 			},
 			Resources: []string{
 				"*",
