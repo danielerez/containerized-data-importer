@@ -19,23 +19,22 @@ import (
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	extv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	crdv1 "kubevirt.io/containerized-data-importer/pkg/apis/volumesnapshot"
-	crdv1v1alpha1 "kubevirt.io/containerized-data-importer/pkg/apis/volumesnapshot/v1alpha1"
+	crdv1alpha1 "github.com/kubernetes-csi/external-snapshotter/pkg/apis/volumesnapshot/v1alpha1"
 )
 
 // createVolumeSnapshotCRD creates CustomResourceDefinition
 func createVolumeSnapshotClassCRD() *extv1beta1.CustomResourceDefinition {
 	crd := &apiextensionsv1beta1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: crdv1v1alpha1.VolumeSnapshotClassResourcePlural + "." + crdv1.GroupName,
+			Name: crdv1alpha1.VolumeSnapshotClassResourcePlural + "." + crdv1alpha1.GroupName,
 		},
 		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
-			Group:   crdv1.GroupName,
-			Version: crdv1v1alpha1.SchemeGroupVersion.Version,
+			Group:   crdv1alpha1.GroupName,
+			Version: crdv1alpha1.SchemeGroupVersion.Version,
 			Scope:   apiextensionsv1beta1.ClusterScoped,
 			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
-				Plural: crdv1v1alpha1.VolumeSnapshotClassResourcePlural,
-				Kind:   reflect.TypeOf(crdv1v1alpha1.VolumeSnapshotClass{}).Name(),
+				Plural: crdv1alpha1.VolumeSnapshotClassResourcePlural,
+				Kind:   reflect.TypeOf(crdv1alpha1.VolumeSnapshotClass{}).Name(),
 			},
 		},
 	}
@@ -45,15 +44,15 @@ func createVolumeSnapshotClassCRD() *extv1beta1.CustomResourceDefinition {
 func createVolumeSnapshotContentCRD() *extv1beta1.CustomResourceDefinition {
 	crd := &apiextensionsv1beta1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: crdv1v1alpha1.VolumeSnapshotContentResourcePlural + "." + crdv1.GroupName,
+			Name: crdv1alpha1.VolumeSnapshotContentResourcePlural + "." + crdv1alpha1.GroupName,
 		},
 		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
-			Group:   crdv1.GroupName,
-			Version: crdv1v1alpha1.SchemeGroupVersion.Version,
+			Group:   crdv1alpha1.GroupName,
+			Version: crdv1alpha1.SchemeGroupVersion.Version,
 			Scope:   apiextensionsv1beta1.ClusterScoped,
 			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
-				Plural: crdv1v1alpha1.VolumeSnapshotContentResourcePlural,
-				Kind:   reflect.TypeOf(crdv1v1alpha1.VolumeSnapshotContent{}).Name(),
+				Plural: crdv1alpha1.VolumeSnapshotContentResourcePlural,
+				Kind:   reflect.TypeOf(crdv1alpha1.VolumeSnapshotContent{}).Name(),
 			},
 		},
 	}
@@ -63,15 +62,15 @@ func createVolumeSnapshotContentCRD() *extv1beta1.CustomResourceDefinition {
 func createVolumeSnapshotCRD() *extv1beta1.CustomResourceDefinition {
 	crd := &apiextensionsv1beta1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: crdv1v1alpha1.VolumeSnapshotResourcePlural + "." + crdv1.GroupName,
+			Name: crdv1alpha1.VolumeSnapshotResourcePlural + "." + crdv1alpha1.GroupName,
 		},
 		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
-			Group:   crdv1.GroupName,
-			Version: crdv1v1alpha1.SchemeGroupVersion.Version,
+			Group:   crdv1alpha1.GroupName,
+			Version: crdv1alpha1.SchemeGroupVersion.Version,
 			Scope:   apiextensionsv1beta1.NamespaceScoped,
 			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
-				Plural: crdv1v1alpha1.VolumeSnapshotResourcePlural,
-				Kind:   reflect.TypeOf(crdv1v1alpha1.VolumeSnapshot{}).Name(),
+				Plural: crdv1alpha1.VolumeSnapshotResourcePlural,
+				Kind:   reflect.TypeOf(crdv1alpha1.VolumeSnapshot{}).Name(),
 			},
 		},
 	}

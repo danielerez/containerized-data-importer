@@ -17,7 +17,9 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
 	clientset "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned"
+	csiclientset "github.com/kubernetes-csi/external-snapshotter/pkg/client/clientset/versioned"
 	informers "kubevirt.io/containerized-data-importer/pkg/client/informers/externalversions"
+	csiinformers "github.com/kubernetes-csi/external-snapshotter/pkg/client/informers/externalversions"
 	"kubevirt.io/containerized-data-importer/pkg/common"
 	"kubevirt.io/containerized-data-importer/pkg/controller"
 )
@@ -113,7 +115,14 @@ func start(cfg *rest.Config, stopCh <-chan struct{}) {
 		klog.Fatalf("Error building example clientset: %s", err.Error())
 	}
 
+	csiClient, err := csiclientset.NewForConfig(cfg)
+
+	if err != nil {
+		klog.Fatalf("Error building csi clientset: %s", err.Error())
+	}
+
 	cdiInformerFactory := informers.NewSharedInformerFactory(cdiClient, common.DefaultResyncPeriod)
+	csiInformerFactory := csiinformers.NewSharedInformerFactory(csiClient, common.DefaultResyncPeriod)
 	pvcInformerFactory := k8sinformers.NewSharedInformerFactory(client, common.DefaultResyncPeriod)
 	podInformerFactory := k8sinformers.NewFilteredSharedInformerFactory(client, common.DefaultResyncPeriod, "", func(options *v1.ListOptions) {
 		options.LabelSelector = common.CDILabelSelector
@@ -133,12 +142,13 @@ func start(cfg *rest.Config, stopCh <-chan struct{}) {
 	routeInformer := routeInformerFactory.Route().V1().Routes()
 	dataVolumeInformer := cdiInformerFactory.Cdi().V1alpha1().DataVolumes()
 	configInformer := cdiInformerFactory.Cdi().V1alpha1().CDIConfigs()
-	snapshotInformer := cdiInformerFactory.Volumesnapshot().V1alpha1().VolumeSnapshots()
-	snapshotClassInformer := cdiInformerFactory.Volumesnapshot().V1alpha1().VolumeSnapshotClasses()
+	snapshotInformer := csiInformerFactory.Volumesnapshot().V1alpha1().VolumeSnapshots()
+	snapshotClassInformer := csiInformerFactory.Volumesnapshot().V1alpha1().VolumeSnapshotClasses()
 
 	dataVolumeController := controller.NewDataVolumeController(
 		client,
 		cdiClient,
+		csiClient,
 		pvcInformer,
 		dataVolumeInformer,
 		snapshotClassInformer)
@@ -161,6 +171,7 @@ func start(cfg *rest.Config, stopCh <-chan struct{}) {
 
 	smartCloneController := controller.NewSmartCloneController(client,
 		cdiClient,
+		csiClient,
 		pvcInformer,
 		podInformer,
 		snapshotInformer,

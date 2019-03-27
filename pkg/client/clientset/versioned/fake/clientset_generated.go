@@ -29,8 +29,6 @@ import (
 	fakecdiv1alpha1 "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned/typed/core/v1alpha1/fake"
 	uploadv1alpha1 "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned/typed/upload/v1alpha1"
 	fakeuploadv1alpha1 "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned/typed/upload/v1alpha1/fake"
-	volumesnapshotv1alpha1 "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned/typed/volumesnapshot/v1alpha1"
-	fakevolumesnapshotv1alpha1 "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned/typed/volumesnapshot/v1alpha1/fake"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
@@ -93,14 +91,4 @@ func (c *Clientset) UploadV1alpha1() uploadv1alpha1.UploadV1alpha1Interface {
 // Upload retrieves the UploadV1alpha1Client
 func (c *Clientset) Upload() uploadv1alpha1.UploadV1alpha1Interface {
 	return &fakeuploadv1alpha1.FakeUploadV1alpha1{Fake: &c.Fake}
-}
-
-// VolumesnapshotV1alpha1 retrieves the VolumesnapshotV1alpha1Client
-func (c *Clientset) VolumesnapshotV1alpha1() volumesnapshotv1alpha1.VolumesnapshotV1alpha1Interface {
-	return &fakevolumesnapshotv1alpha1.FakeVolumesnapshotV1alpha1{Fake: &c.Fake}
-}
-
-// Volumesnapshot retrieves the VolumesnapshotV1alpha1Client
-func (c *Clientset) Volumesnapshot() volumesnapshotv1alpha1.VolumesnapshotV1alpha1Interface {
-	return &fakevolumesnapshotv1alpha1.FakeVolumesnapshotV1alpha1{Fake: &c.Fake}
 }

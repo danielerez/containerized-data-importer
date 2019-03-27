@@ -39,13 +39,14 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog"
 	cdiv1 "kubevirt.io/containerized-data-importer/pkg/apis/core/v1alpha1"
-	cdisnapshotsv1 "kubevirt.io/containerized-data-importer/pkg/apis/volumesnapshot/v1alpha1"
+	csisnapshotv1 "github.com/kubernetes-csi/external-snapshotter/pkg/apis/volumesnapshot/v1alpha1"
 	clientset "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned"
+	csiclientset "github.com/kubernetes-csi/external-snapshotter/pkg/client/clientset/versioned"
 	cdischeme "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned/scheme"
 	informers "kubevirt.io/containerized-data-importer/pkg/client/informers/externalversions/core/v1alpha1"
-	snapshotsinformers "kubevirt.io/containerized-data-importer/pkg/client/informers/externalversions/volumesnapshot/v1alpha1"
+	snapshotsinformers "github.com/kubernetes-csi/external-snapshotter/pkg/client/informers/externalversions/volumesnapshot/v1alpha1"
 	listers "kubevirt.io/containerized-data-importer/pkg/client/listers/core/v1alpha1"
-	snapshotslisters "kubevirt.io/containerized-data-importer/pkg/client/listers/volumesnapshot/v1alpha1"
+	snapshotslisters "github.com/kubernetes-csi/external-snapshotter/pkg/client/listers/volumesnapshot/v1alpha1"
 	expectations "kubevirt.io/containerized-data-importer/pkg/expectations"
 )
 
@@ -126,6 +127,7 @@ type DataVolumeController struct {
 	kubeclientset kubernetes.Interface
 	// clientset is a clientset for our own API group
 	cdiClientSet clientset.Interface
+	csiClientSet csiclientset.Interface
 
 	pvcLister  corelisters.PersistentVolumeClaimLister
 	pvcsSynced cache.InformerSynced
@@ -153,6 +155,7 @@ type DataVolumeEvent struct {
 func NewDataVolumeController(
 	kubeclientset kubernetes.Interface,
 	cdiClientSet clientset.Interface,
+	csiClientSet csiclientset.Interface,
 	pvcInformer coreinformers.PersistentVolumeClaimInformer,
 	dataVolumeInformer informers.DataVolumeInformer,
 	snapshotClassInformer snapshotsinformers.VolumeSnapshotClassInformer) *DataVolumeController {
@@ -170,6 +173,7 @@ func NewDataVolumeController(
 	controller := &DataVolumeController{
 		kubeclientset:       kubeclientset,
 		cdiClientSet:        cdiClientSet,
+		csiClientSet:        csiClientSet,
 		pvcLister:           pvcInformer.Lister(),
 		pvcsSynced:          pvcInformer.Informer().HasSynced,
 		dataVolumesLister:   dataVolumeInformer.Lister(),
@@ -358,11 +362,11 @@ func (c *DataVolumeController) syncHandler(key string) error {
 
 	if !exists && needsSync {
 		smartCloneApplicable, snapshotClassName := c.isSmartCloneApplicable(dataVolume)
+		klog.V(3).Infof("!!! smartCloneApplicable: %t", smartCloneApplicable)
 		if smartCloneApplicable {
-			klog.V(3).Infof("!!! smartCloneApplicable: %t", smartCloneApplicable)
 			newSnapshot := newSnapshot(dataVolume, *snapshotClassName)
 			c.pvcExpectations.ExpectCreations(key, 1)
-			_, err := c.cdiClientSet.VolumesnapshotV1alpha1().VolumeSnapshots(newSnapshot.Namespace).Create(newSnapshot)
+			_, err := c.csiClientSet.VolumesnapshotV1alpha1().VolumeSnapshots(newSnapshot.Namespace).Create(newSnapshot)
 			if err != nil {
 				c.pvcExpectations.CreationObserved(key)
 				return err
@@ -471,9 +475,9 @@ func (c *DataVolumeController) isSmartCloneApplicable(dataVolume *cdiv1.DataVolu
 	return false, nil
 }
 
-func newSnapshot(dataVolume *cdiv1.DataVolume, snapshotClassName string) *cdisnapshotsv1.VolumeSnapshot {
+func newSnapshot(dataVolume *cdiv1.DataVolume, snapshotClassName string) *csisnapshotv1.VolumeSnapshot {
 	className := snapshotClassName
-	snapshot := &cdisnapshotsv1.VolumeSnapshot{
+	snapshot := &csisnapshotv1.VolumeSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      dataVolume.Name,
 			Namespace: dataVolume.Namespace,
@@ -486,11 +490,11 @@ func newSnapshot(dataVolume *cdiv1.DataVolume, snapshotClassName string) *cdisna
 			},
 		},
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: cdisnapshotsv1.SchemeGroupVersion.String(),
+			APIVersion: csisnapshotv1.SchemeGroupVersion.String(),
 			Kind:       "VolumeSnapshot",
 		},
-		Status: cdisnapshotsv1.VolumeSnapshotStatus{},
-		Spec: cdisnapshotsv1.VolumeSnapshotSpec{
+		Status: csisnapshotv1.VolumeSnapshotStatus{},
+		Spec: csisnapshotv1.VolumeSnapshotSpec{
 			Source: &corev1.TypedLocalObjectReference{
 				Name: dataVolume.Spec.Source.PVC.Name,
 				Kind: "PersistentVolumeClaim",

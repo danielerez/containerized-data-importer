@@ -32,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
+	//csifake "github.com/kubernetes-csi/external-snapshotter/pkg/client/clientset/versioned/fake"
 	cdiv1 "kubevirt.io/containerized-data-importer/pkg/apis/core/v1alpha1"
 	"kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned/fake"
 	informers "kubevirt.io/containerized-data-importer/pkg/client/informers/externalversions"
@@ -46,6 +47,7 @@ type fixture struct {
 	t *testing.T
 
 	client     *fake.Clientset
+	//csiclient  *csifake.Clientset
 	kubeclient *k8sfake.Clientset
 
 	// Objects to put in the store.
@@ -140,6 +142,7 @@ func newBlankImageDataVolume(name string) *cdiv1.DataVolume {
 
 func (f *fixture) newController() (*DataVolumeController, informers.SharedInformerFactory, kubeinformers.SharedInformerFactory) {
 	f.client = fake.NewSimpleClientset(f.objects...)
+	//f.csiclient = csifake.NewSimpleClientset(f.objects)
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
@@ -155,6 +158,7 @@ func (f *fixture) newController() (*DataVolumeController, informers.SharedInform
 
 	c := NewDataVolumeController(f.kubeclient,
 		f.client,
+		nil,
 		k8sI.Core().V1().PersistentVolumeClaims(),
 		i.Cdi().V1alpha1().DataVolumes(),
 		i.Volumesnapshot().V1alpha1().VolumeSnapshotClasses())

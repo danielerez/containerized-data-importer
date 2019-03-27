@@ -38,3 +38,5 @@ import:
   version: release-3.11
 - package: github.com/openshift/client-go
   version: release-3.11
+- package: github.com/kubernetes-csi/external-snapshotter
+  version: ^v1.0.1

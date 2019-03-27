@@ -24,7 +24,6 @@ import (
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
 	cdiv1alpha1 "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	uploadv1alpha1 "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned/typed/upload/v1alpha1"
-	volumesnapshotv1alpha1 "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned/typed/volumesnapshot/v1alpha1"
 )
 
 type Interface interface {
@@ -35,18 +34,14 @@ type Interface interface {
 	UploadV1alpha1() uploadv1alpha1.UploadV1alpha1Interface
 	// Deprecated: please explicitly pick a version if possible.
 	Upload() uploadv1alpha1.UploadV1alpha1Interface
-	VolumesnapshotV1alpha1() volumesnapshotv1alpha1.VolumesnapshotV1alpha1Interface
-	// Deprecated: please explicitly pick a version if possible.
-	Volumesnapshot() volumesnapshotv1alpha1.VolumesnapshotV1alpha1Interface
 }
 
 // Clientset contains the clients for groups. Each group has exactly one
 // version included in a Clientset.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	cdiV1alpha1            *cdiv1alpha1.CdiV1alpha1Client
-	uploadV1alpha1         *uploadv1alpha1.UploadV1alpha1Client
-	volumesnapshotV1alpha1 *volumesnapshotv1alpha1.VolumesnapshotV1alpha1Client
+	cdiV1alpha1    *cdiv1alpha1.CdiV1alpha1Client
+	uploadV1alpha1 *uploadv1alpha1.UploadV1alpha1Client
 }
 
 // CdiV1alpha1 retrieves the CdiV1alpha1Client
@@ -69,17 +64,6 @@ func (c *Clientset) UploadV1alpha1() uploadv1alpha1.UploadV1alpha1Interface {
 // Please explicitly pick a version.
 func (c *Clientset) Upload() uploadv1alpha1.UploadV1alpha1Interface {
 	return c.uploadV1alpha1
-}
-
-// VolumesnapshotV1alpha1 retrieves the VolumesnapshotV1alpha1Client
-func (c *Clientset) VolumesnapshotV1alpha1() volumesnapshotv1alpha1.VolumesnapshotV1alpha1Interface {
-	return c.volumesnapshotV1alpha1
-}
-
-// Deprecated: Volumesnapshot retrieves the default version of VolumesnapshotClient.
-// Please explicitly pick a version.
-func (c *Clientset) Volumesnapshot() volumesnapshotv1alpha1.VolumesnapshotV1alpha1Interface {
-	return c.volumesnapshotV1alpha1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -106,10 +90,6 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 	if err != nil {
 		return nil, err
 	}
-	cs.volumesnapshotV1alpha1, err = volumesnapshotv1alpha1.NewForConfig(&configShallowCopy)
-	if err != nil {
-		return nil, err
-	}
 
 	cs.DiscoveryClient, err = discovery.NewDiscoveryClientForConfig(&configShallowCopy)
 	if err != nil {
@@ -124,7 +104,6 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 	var cs Clientset
 	cs.cdiV1alpha1 = cdiv1alpha1.NewForConfigOrDie(c)
 	cs.uploadV1alpha1 = uploadv1alpha1.NewForConfigOrDie(c)
-	cs.volumesnapshotV1alpha1 = volumesnapshotv1alpha1.NewForConfigOrDie(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClientForConfigOrDie(c)
 	return &cs
@@ -135,7 +114,6 @@ func New(c rest.Interface) *Clientset {
 	var cs Clientset
 	cs.cdiV1alpha1 = cdiv1alpha1.New(c)
 	cs.uploadV1alpha1 = uploadv1alpha1.New(c)
-	cs.volumesnapshotV1alpha1 = volumesnapshotv1alpha1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs

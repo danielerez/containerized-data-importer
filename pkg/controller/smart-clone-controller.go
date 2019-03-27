@@ -12,12 +12,13 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog"
 	cdiv1 "kubevirt.io/containerized-data-importer/pkg/apis/core/v1alpha1"
-	cdisnapshotsv1 "kubevirt.io/containerized-data-importer/pkg/apis/volumesnapshot/v1alpha1"
 	clientset "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned"
+	csiclientset "github.com/kubernetes-csi/external-snapshotter/pkg/client/clientset/versioned"
+	csisnapshotv1 "github.com/kubernetes-csi/external-snapshotter/pkg/apis/volumesnapshot/v1alpha1"
 	informers "kubevirt.io/containerized-data-importer/pkg/client/informers/externalversions/core/v1alpha1"
-	snapshotsinformers "kubevirt.io/containerized-data-importer/pkg/client/informers/externalversions/volumesnapshot/v1alpha1"
+	snapshotsinformers "github.com/kubernetes-csi/external-snapshotter/pkg/client/informers/externalversions/volumesnapshot/v1alpha1"
 	listers "kubevirt.io/containerized-data-importer/pkg/client/listers/core/v1alpha1"
-	snapshotslisters "kubevirt.io/containerized-data-importer/pkg/client/listers/volumesnapshot/v1alpha1"
+	snapshotslisters "github.com/kubernetes-csi/external-snapshotter/pkg/client/listers/volumesnapshot/v1alpha1"
 	"kubevirt.io/containerized-data-importer/pkg/common"
 	expectations "kubevirt.io/containerized-data-importer/pkg/expectations"
 )
@@ -31,6 +32,7 @@ const (
 type SmartCloneController struct {
 	Controller
 	cdiClientSet clientset.Interface
+	csiClientSet csiclientset.Interface
 
 	snapshotsLister  snapshotslisters.VolumeSnapshotLister
 	dataVolumeLister listers.DataVolumeLister
@@ -42,6 +44,7 @@ type SmartCloneController struct {
 // to the newly created Controller
 func NewSmartCloneController(client kubernetes.Interface,
 	cdiClientSet clientset.Interface,
+	csiClientSet csiclientset.Interface,
 	pvcInformer coreinformers.PersistentVolumeClaimInformer,
 	podInformer coreinformers.PodInformer,
 	snapshotInformer snapshotsinformers.VolumeSnapshotInformer,
@@ -52,6 +55,7 @@ func NewSmartCloneController(client kubernetes.Interface,
 	c := &SmartCloneController{
 		Controller:       *NewController(client, pvcInformer, podInformer, image, pullPolicy, verbose),
 		cdiClientSet:     cdiClientSet,
+		csiClientSet:     csiClientSet,
 		snapshotsLister:  snapshotInformer.Lister(),
 		dataVolumeLister: dataVolumeInformer.Lister(),
 		podExpectations:  expectations.NewUIDTrackingControllerExpectations(expectations.NewControllerExpectations()),
@@ -113,7 +117,7 @@ func (c *SmartCloneController) ProcessNextItem() bool {
 			snapshotToDelete, err := c.snapshotsLister.VolumeSnapshots(ns).Get(snapshotName)
 			if snapshotToDelete != nil {
 				klog.V(3).Infof("!!! smart-clone ProcessNextItem snapshotName: %s", snapshotName)
-				err = c.cdiClientSet.VolumesnapshotV1alpha1().VolumeSnapshots(ns).Delete(snapshotName, &metav1.DeleteOptions{})
+				err = c.csiClientSet.VolumesnapshotV1alpha1().VolumeSnapshots(ns).Delete(snapshotName, &metav1.DeleteOptions{})
 				if err != nil {
 					klog.Errorf("error deleting snapshot for smart-clone %q: %v", key, err)
 					return true
@@ -166,7 +170,7 @@ func (c *SmartCloneController) syncSnapshot(key string) error {
 
 // Create the cloning source and target pods based the pvc. The pvc is checked (again) to ensure that we are not already
 // processing this pvc, which would result in multiple pods for the same pvc.
-func (c *SmartCloneController) processSnapshotItem(snapshot *cdisnapshotsv1.VolumeSnapshot) error {
+func (c *SmartCloneController) processSnapshotItem(snapshot *csisnapshotv1.VolumeSnapshot) error {
 	// anno := map[string]string{}
 
 	snapshotKey, err := cache.MetaNamespaceKeyFunc(snapshot)
@@ -216,7 +220,7 @@ func (c *SmartCloneController) processSnapshotItem(snapshot *cdisnapshotsv1.Volu
 }
 
 // return a VolumeSnapshot pointer based on the passed-in work queue key.
-func (c *SmartCloneController) snapshotFromKey(key interface{}) (*cdisnapshotsv1.VolumeSnapshot, bool, error) {
+func (c *SmartCloneController) snapshotFromKey(key interface{}) (*csisnapshotv1.VolumeSnapshot, bool, error) {
 	obj, exists, err := c.objFromKey(c.snapshotInformer, key)
 	if err != nil {
 		return nil, false, errors.Wrap(err, "could not get pvc object from key")
@@ -224,7 +228,7 @@ func (c *SmartCloneController) snapshotFromKey(key interface{}) (*cdisnapshotsv1
 		return nil, false, nil
 	}
 
-	snapshot, ok := obj.(*cdisnapshotsv1.VolumeSnapshot)
+	snapshot, ok := obj.(*csisnapshotv1.VolumeSnapshot)
 	if !ok {
 		return nil, false, errors.New("Object not of type *v1.PersistentVolumeClaim")
 	}
@@ -266,7 +270,7 @@ func (c *SmartCloneController) enqueuePvc(obj interface{}) {
 	c.queue.AddRateLimited(key)
 }
 
-func newPvcFromSnapshot(snapshot *cdisnapshotsv1.VolumeSnapshot, dataVolume *cdiv1.DataVolume) *corev1.PersistentVolumeClaim {
+func newPvcFromSnapshot(snapshot *csisnapshotv1.VolumeSnapshot, dataVolume *cdiv1.DataVolume) *corev1.PersistentVolumeClaim {
 	labels := map[string]string{
 		"cdi-controller": snapshot.Name,
 		"app":            "containerized-data-importer",
@@ -289,7 +293,7 @@ func newPvcFromSnapshot(snapshot *cdisnapshotsv1.VolumeSnapshot, dataVolume *cdi
 			DataSource: &corev1.TypedLocalObjectReference{
 				Name:     snapshot.Name,
 				Kind:     "VolumeSnapshot",
-				APIGroup: &cdisnapshotsv1.SchemeGroupVersion.Group,
+				APIGroup: &csisnapshotv1.SchemeGroupVersion.Group,
 			},
 			VolumeMode:       dataVolume.Spec.PVC.VolumeMode,
 			AccessModes:      dataVolume.Spec.PVC.AccessModes,
