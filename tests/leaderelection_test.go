@@ -192,7 +192,7 @@ var _ = Describe("[rfe_id:1250][crit:high][test_id:1889][vendor:cnv-qe@redhat.co
 			controller.AnnSecret:   "",
 		}
 
-		_, err := utils.CreatePVCFromDefinition(f.K8sClient, f.Namespace.Name, utils.NewPVCDefinition("import-e2e", "20M", pvcAnn, nil))
+		_, err := utils.CreatePVCFromDefinition(f.K8sClient, f.Namespace.Name, utils.NewPVCDefinition("import-e2e", "30M", pvcAnn, nil))
 		Expect(err).NotTo(HaveOccurred())
 
 		Eventually(func() bool {
